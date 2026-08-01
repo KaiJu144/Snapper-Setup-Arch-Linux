@@ -24,8 +24,8 @@ end
 echo " Detected Root Partition: $ROOT_DEV (UUID: $ROOT_UUID)"
 
 # 3. Install Required Packages
-echo " Installing required packages (snapper, snap-pac, grub-btrfs)..."
-pacman -S --needed --noconfirm snapper snap-pac grub-btrfs
+echo " Installing required packages (snapper, snap-pac, grub-btrfs, inotify-tools)..."
+pacman -S --needed --noconfirm snapper snap-pac grub-btrfs inotify-tools
 
 # 4. Cleanup any existing stale configurations
 echo " Cleaning up stale snapper configurations..."
@@ -34,9 +34,15 @@ rm -rf /etc/snapper/configs/*
 rm -f /etc/snapper/snapper-configs
 rm -f /etc/sysconfig/snapper
 
-# 5. Create Btrfs Subvolume @snapshots
+# 5. Safely Create Btrfs Subvolume @snapshots at Root Level
 echo " Creating Btrfs subvolume /@snapshots..."
-btrfs subvolume create /@snapshots 2>/dev/null
+mkdir -p /mnt/btrfs-root
+mount -o subvolid=5 $ROOT_DEV /mnt/btrfs-root
+if not test -d /mnt/btrfs-root/@snapshots
+    btrfs subvolume create /mnt/btrfs-root/@snapshots
+end
+umount /mnt/btrfs-root
+rmdir /mnt/btrfs-root
 mkdir -p /.snapshots
 
 # 6. Mount Subvolume
@@ -82,8 +88,14 @@ EMPTY_PRE_POST_MIN_AGE="1800"' >/etc/snapper/configs/root
 echo 'SNAPPER_CONFIGS="root"' >/etc/snapper/snapper-configs
 chmod 750 /.snapshots
 
-# 9. Enable & Start Services
-echo " Enabling grub-btrfsd service..."
+# 9. Configure & Enable grub-btrfsd service
+echo " Configuring and Enabling grub-btrfsd service..."
+mkdir -p /etc/systemd/system/grub-btrfsd.service.d/
+echo '[Service]
+ExecStart=
+ExecStart=/usr/bin/grub-btrfsd --syslog -s /.snapshots' > /etc/systemd/system/grub-btrfsd.service.d/override.conf
+
+systemctl daemon-reload
 systemctl enable --now grub-btrfsd
 
 # 10. Install Custom Fish Function (`arch snapshot`)
@@ -99,7 +111,7 @@ if test -n "$CALLER_USER"
 
     echo " Installing 'arch snapshot' function for user $CALLER_USER..."
 
-    # Write arch.fish cleanly using printf to avoid quote-parsing issues
+    # Write arch.fish with grub-mkconfig auto-update on delete
     printf '%s\n' \
         'function arch --description "Arch Linux Snapshot Utility"' \
         '    set -l sub_command $argv[1]' \
@@ -117,11 +129,13 @@ if test -n "$CALLER_USER"
         '                case -d --delete' \
         '                    if test -z "$arg"' \
         '                        echo " Error: Please specify a snapshot ID to delete."' \
-        '                        echo "Usage: arch snapshot -d <snapshot_id>"' \
+        '                        echo " Usage: arch snapshot -d <snapshot_id>"' \
         '                        return 1' \
         '                    end' \
         '                    echo " Deleting snapshot ID: $arg..."' \
         '                    sudo snapper -c root delete $arg' \
+        '                    echo " Updating GRUB menu..."' \
+        '                    sudo grub-mkconfig -o /boot/grub/grub.cfg' \
         '' \
         '                case -h --help -help' \
         '                    echo " Arch Snapshot Utility"' \
