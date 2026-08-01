@@ -326,27 +326,30 @@ function arch --description "Arch Linux Snapshot Utility"
     set -l sub_command $argv[1]
 
     switch "$sub_command"
-        case "snapshot"
+        case snapshot
             set -l flag $argv[2]
             set -l arg $argv[3]
 
             switch "$flag"
-                case "-l" "--list"
-                    echo "Listing all system snapshots..."
+                case -l --list
+                    echo " Listing all system snapshots..."
                     sudo snapper -c root list
 
-                case "-d" "--delete"
+                case -d --delete
                     if test -z "$arg"
-                        echo "Error: Please specify a snapshot ID to delete."
-                        echo "Usage: arch snapshot -d <snapshot_id>"
+                        echo " Error: Please specify a snapshot ID to delete."
+                        echo " Usage: arch snapshot -d <snapshot_id>"
                         return 1
                     end
-                    echo "Deleting snapshot ID: $arg..."
+                    echo " Deleting snapshot ID: $arg..."
                     sudo snapper -c root delete $arg
+                    
+                    echo " Updating GRUB menu..."
+                    sudo grub-mkconfig -o /boot/grub/grub.cfg
 
-                case "-h" "--help" "-help"
+                case -h --help -help
                     echo "Arch Snapshot Utility"
-                    echo "-------------------------------------"
+                    echo -------------------------------------
                     echo "Usage:"
                     echo "  arch snapshot            : Create a manual snapshot"
                     echo "  arch snapshot -l         : List all snapshots"
@@ -355,17 +358,17 @@ function arch --description "Arch Linux Snapshot Utility"
 
                 case ""
                     set -l desc "Manual snapshot taken on "(date "+%Y-%m-%d %H:%M:%S")
-                    echo "Creating manual snapshot..."
+                    echo " Creating manual snapshot..."
                     sudo snapper -c root create --description "$desc"
-                    echo "Snapshot created successfully!"
+                    echo " Snapshot created successfully!"
 
                 case "*"
-                    echo "Unknown flag: $flag"
+                    echo " Unknown flag: $flag"
                     echo "Use 'arch snapshot -h' for help."
             end
 
         case "*"
-            echo "Unknown command: $sub_command"
+            echo " Unknown command: $sub_command"
             echo "Use 'arch snapshot -h' for help."
     end
 end
