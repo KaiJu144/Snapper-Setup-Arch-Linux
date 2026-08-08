@@ -328,7 +328,7 @@ function arch --description "Arch Linux Snapshot Utility"
     switch "$sub_command"
         case snapshot
             set -l flag $argv[2]
-            set -l arg $argv[3]
+            set -l args $argv[3..-1]
 
             switch "$flag"
                 case -l --list
@@ -336,25 +336,30 @@ function arch --description "Arch Linux Snapshot Utility"
                     sudo snapper -c root list
 
                 case -d --delete
-                    if test -z "$arg"
-                        echo " Error: Please specify a snapshot ID to delete."
-                        echo " Usage: arch snapshot -d <snapshot_id>"
+                    if test (count $args) -eq 0
+                        echo " Error: Please specify at least one snapshot ID to delete."
+                        echo " Usage: arch snapshot -d <id1> [id2 id3 ...]"
                         return 1
                     end
-                    echo " Deleting snapshot ID: $arg..."
-                    sudo snapper -c root delete $arg
-                    
+
+                    echo " Deleting snapshot ID(s): $args..."
+                    for id in $args
+                        echo "   - Deleting ID: $id"
+                        sudo snapper -c root delete $id
+                    end
+
                     echo " Updating GRUB menu..."
                     sudo grub-mkconfig -o /boot/grub/grub.cfg
 
                 case -h --help -help
-                    echo "Arch Snapshot Utility"
-                    echo -------------------------------------
+                    echo " Arch Snapshot Utility"
+                    echo "-------------------------------------"
                     echo "Usage:"
-                    echo "  arch snapshot            : Create a manual snapshot"
-                    echo "  arch snapshot -l         : List all snapshots"
-                    echo "  arch snapshot -d <ID>    : Delete snapshot by ID"
-                    echo "  arch snapshot -h | -help : Show this help message"
+                    echo "  arch snapshot               : Create a manual snapshot"
+                    echo "  arch snapshot -l            : List all snapshots"
+                    echo "  arch snapshot -d <ID1> <ID2>: Delete multiple snapshots by ID"
+                    echo "  arch snapshot -d (seq 1 15) : Delete snapshots from ID 1 to 15"
+                    echo "  arch snapshot -h | -help    : Show this help message"
 
                 case ""
                     set -l desc "Manual snapshot taken on "(date "+%Y-%m-%d %H:%M:%S")
@@ -391,7 +396,8 @@ source ~/.config/fish/functions/arch.fish
 |---|---|
 | `arch snapshot` | Instantly **create a manual Snapshot** (with time/date stamp) |
 | `arch snapshot -l` | **List all snapshots** in the system. |
-| `arch snapshot -d <ID>` | **Delete the Snapshot** by the specified ID (e.g. `arch snapshot -d 5`) |
+| `arch snapshot -d <ID1> <ID2>` | **Delete multiple snapshots by ID** (e.g. `arch snapshot -d 5 6 7`) |
+| `arch snapshot -d (seq <ID1> <ID15>)` | **Delete snapshots from ID** (e.g. `arch snapshot -d (seq 1 15)`) 
 | `arch snapshot -h` | Show the [**Help menu**] (`arch snapshot -help`, `arch snapshot --help` can be used as well) |
 
 ### 2. Auto-Snapshot before-after system update
@@ -428,4 +434,90 @@ This script sets up automatic snapshot retention to prevent the disk from fillin
   - Hourly: **Collect 10 characters**.
   - Daily: **Collect 10 characters**.
   - Weekly / Monthly / Yearly: **0** (`turn it off to save space`)
-  ---
+
+### 5. Why does Snapper not reuse the old snapshot number after I delete it? (In-depth explanation)
+
+- There are three main factors that prevent Snapper from resetting to `#1` after we delete files:
+1. `info.xml` within **Subvolume** (`/.snapshots/<number>/info.xml`):
+Snapper doesn't just check if the folder in `/.snapshots/ exists`, every time a snapshot is created, it creates an `info.xml` file to store metadata. If these files are stuck or the numbers in the XML conflict, the system will skip to the next number.
+
+2. **Snapper Internal DB / Metadata Counter**:
+The Snapper Engine stores the Next Snapshot ID in Memory/State. If you delete a folder using `rm -rf` without using the `snapper delete` command, the Snapper counter will not update backward.
+
+3. **Btrfs Subvolume Tree Inconsistency**:
+At the Btrfs File System level, each subvolume has its own subvolume ID in the kernel. Even if the folder is deleted on the OS, if the actual subvolume hasn't been `btrfs subvolume delete`, the snapper will consider that area to still have a conflict and will run the next ID to prevent data overlap (Data Corruption Protection).
+
+#### How to clean and reset Snapper #1 (One-Liner / Single Script)
+
+> [!WARNING]
+> ## YOU NEED TO DELETE ALL YOUR SNAPSHOT BEFORE PROCEEDDING WITH THE FOLLOWING STEPS.
+
+- To completely reset the Snapper system to a clean 100% reset, returning the snapshot count to `#1` you can use the command/script below:
+
+1. Unmount and clear the service.
+
+```sh
+sudo systemctl stop grub-btrfsd
+```
+
+```sh
+sudo umount -l /.snapshots 2>/dev/null
+```
+
+2. Delete all pending subvolumes in /.snapshots (if any).
+
+```sh
+sudo mount -o subvolid=5 (df -P / | tail -n1 | awk '{print $1}') /mnt
+if test -d /mnt/@snapshots
+	for subvol in /mnt/@snapshots/*
+		if test -d $subvol
+			sudo btrfs subvolume delete $subvol 2>/dev/null
+		end
+	end
+end
+sudo umount /mnt
+```
+
+3. Reset Snapper's Config and System Configuration files.
+
+```sh
+sudo rm -rf /etc/snapper/configs/root /etc/snapper/configs/*
+```
+
+```sh
+echo 'SNAPPER_CONFIGS=""' | sudo tee /etc/conf.d/snapper >/dev/null
+```
+
+```sh
+echo 'SNAPPER_CONFIGS=""' | sudo tee /etc/sysconfig/snapper >/dev/null
+```
+
+4. Re-mount Subvolume @snapshots
+
+```sh
+sudo mkdir -p /.snapshots
+```
+
+```sh
+sudo mount -o subvol=@snapshots (df -P / | tail -n1 | awk '{print $1}') /.snapshots
+```
+
+5. Create a clean new '`root`' configuration directly through Snapper.
+
+```sh
+sudo snapper -c root create-config /
+```
+6. Set Permissions and Restart the Service.
+
+```sh
+sudo chmod 750 /.snapshots
+```
+
+```sh
+sudo systemctl daemon-reload
+```
+
+```sh
+sudo systemctl restart grub-btrfsd
+```
+---
