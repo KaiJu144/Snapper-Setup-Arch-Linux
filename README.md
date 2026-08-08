@@ -450,7 +450,7 @@ At the Btrfs File System level, each subvolume has its own subvolume ID in the k
 #### How to clean and reset Snapper #1 (One-Liner / Single Script)
 
 > [!WARNING]
-> ## YOU NEED TO DELETE ALL YOUR SNAPSHOT BEFORE PROCEEDDING WITH THE FOLLOWING STEPS.
+> ## YOU NEED TO DELETE ALL YOUR SNAPSHOT BEFORE PROCEEDING WITH THE FOLLOWING STEPS.
 
 - To completely reset the Snapper system to a clean 100% reset, returning the snapshot count to `#1` you can use the command/script below:
 
