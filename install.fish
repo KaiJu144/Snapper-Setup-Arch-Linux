@@ -47,17 +47,9 @@ end
 umount /mnt/btrfs-root
 rmdir /mnt/btrfs-root
 
-# 7. Initialize Snapper Config (Must be done BEFORE mounting /.snapshots)
-echo " Configuring Snapper for / ..."
-snapper -c root create-config /
-
-# Snapper creates a default /.snapshots subvolume, we need to replace it with our @snapshots
-umount /.snapshots 2>/dev/null
-rmdir /.snapshots 2>/dev/null
-mkdir -p /.snapshots
-
-# 8. Mount Subvolume & Update /etc/fstab
+# 7. Mount Subvolume & Update /etc/fstab
 echo " Mounting /@snapshots to /.snapshots..."
+mkdir -p /.snapshots
 mount -o subvol=@snapshots $ROOT_DEV /.snapshots
 
 if not grep -q "/.snapshots" /etc/fstab
@@ -68,6 +60,15 @@ if not grep -q "/.snapshots" /etc/fstab
 else
     echo "  /.snapshots entry already exists in /etc/fstab."
 end
+
+# 8. Register Snapper Config Safely
+echo "  Configuring Snapper for / ..."
+if test -f /etc/snapper/configs/root
+    rm -f /etc/snapper/configs/root
+end
+
+# Create snapper config over the mounted Btrfs subvolume
+snapper -c root create-config --fstype=btrfs /
 
 # 9. Set Arch Config Files & Permissions
 echo 'SNAPPER_CONFIGS="root"' > /etc/conf.d/snapper
