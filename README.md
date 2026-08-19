@@ -454,7 +454,7 @@ At the Btrfs File System level, each subvolume has its own subvolume ID in the k
 
 - To completely reset the Snapper system to a clean 100% reset, returning the snapshot count to `#1` you can use the command/script below:
 
-1. **Unmount** and **clear the service**.
+1. **Stop the service** and **unmount all** old files.
 
 ```sh
 sudo systemctl stop grub-btrfsd
@@ -464,41 +464,15 @@ sudo systemctl stop grub-btrfsd
 sudo umount -l /.snapshots 2>/dev/null
 ```
 
-2. **Delete all** child subvolumes in `@snapshots`.
-
-- Access the root level of Btrfs (subvolid=5) to clear all old subvolume snapshots:
-
 ```sh
-sudo mkdir -p /mnt/btrfs-root
+sudo rm -rf /.snapshots
 ```
-
-```sh
-sudo mount -o subvolid=5 (df -P / | tail -n1 | awk '{print $1}') /mnt/btrfs-root
-```
-
-```sh
-if test -d /mnt/btrfs-root/@snapshots
-	for subvol in /mnt/btrfs-root/@snapshots/*
-		if test -d $subvol
-			sudo btrfs subvolume delete $subvol
-		end
-	end
-end
-```
-
-```sh
-sudo umount /mnt/btrfs-root
-```
-
-```sh
-sudo rmdir /mnt/btrfs-root
-```
-
-3. **Reset Snapper** Config and **System Configuration** files.
 
 ```sh
 sudo rm -rf /etc/snapper/configs/*
 ```
+
+2. Unlock the **configuration** to allow **Snapper** to create a new configuration.
 
 ```sh
 echo 'SNAPPER_CONFIGS=""' | sudo tee /etc/conf.d/snapper >/dev/null
@@ -508,9 +482,21 @@ echo 'SNAPPER_CONFIGS=""' | sudo tee /etc/conf.d/snapper >/dev/null
 echo 'SNAPPER_CONFIGS=""' | sudo tee /etc/sysconfig/snapper >/dev/null
 ```
 
-4. Re-mount Subvolume `@snapshots` and **create a new configuration**.
+3. Let **Snapper** create the actual **configuration** file first (it will secretly create its own `/.snapshots` file).
 
-- (The most important point in preventing `IO errors`) You must mount `@snapshots` back into `/.snapshots` before creating a new configuration:
+```sh
+sudo snapper -c root create-config /
+```
+
+4. Swap the `/.snapshots` that **Snapper** creates with our actual `@snapshots`.
+
+```sh
+sudo umount /.snapshots 2>/dev/null
+```
+
+```sh
+sudo rm -rf /.snapshots
+```
 
 ```sh
 sudo mkdir -p /.snapshots
@@ -520,11 +506,7 @@ sudo mkdir -p /.snapshots
 sudo mount -o subvol=@snapshots (df -P / | tail -n1 | awk '{print $1}') /.snapshots
 ```
 
-```sh
-sudo snapper -c root create-config --fstype=btrfs /
-```
-
-5. Configure **Permissions** and **enable the Service**.
+5. Register the **configuration** and set **permissions**.
 
 ```sh
 echo 'SNAPPER_CONFIGS="root"' | sudo tee /etc/conf.d/snapper >/dev/null
@@ -538,6 +520,8 @@ echo 'SNAPPER_CONFIGS="root"' | sudo tee /etc/sysconfig/snapper >/dev/null
 sudo chmod 750 /.snapshots
 ```
 
+6. **Restart Service**.
+
 ```sh
 sudo systemctl daemon-reload
 ```
@@ -545,4 +529,5 @@ sudo systemctl daemon-reload
 ```sh
 sudo systemctl restart grub-btrfsd
 ```
+
 ---
