@@ -32,9 +32,10 @@ echo 'SNAPPER_CONFIGS=""' > /etc/sysconfig/snapper
 echo " Installing required packages (snapper, snap-pac, grub-btrfs, inotify-tools)..."
 pacman -S --needed --noconfirm snapper snap-pac grub-btrfs inotify-tools
 
-# 5. Cleanup any existing stale configurations safely
+# 5. Cleanup any existing stale configurations safely (Avoid Fish Wildcard Error)
 echo " Cleaning up stale snapper configurations..."
 umount -l /.snapshots 2>/dev/null
+rm -rf /.snapshots
 rm -rf /etc/snapper/configs
 
 # 6. Safely Create Btrfs Subvolume @snapshots at Root Level
@@ -47,8 +48,14 @@ end
 umount /mnt/btrfs-root
 rmdir /mnt/btrfs-root
 
-# 7. Mount Subvolume & Update /etc/fstab
+# 7. Initialize Snapper Config (Let Snapper create initial config)
+echo "  Configuring Snapper for / ..."
+snapper -c root create-config /
+
+# 8. Swap /.snapshots with our Btrfs @snapshots subvolume
 echo " Mounting /@snapshots to /.snapshots..."
+umount /.snapshots 2>/dev/null
+rm -rf /.snapshots
 mkdir -p /.snapshots
 mount -o subvol=@snapshots $ROOT_DEV /.snapshots
 
@@ -60,15 +67,6 @@ if not grep -q "/.snapshots" /etc/fstab
 else
     echo "  /.snapshots entry already exists in /etc/fstab."
 end
-
-# 8. Register Snapper Config Safely
-echo "  Configuring Snapper for / ..."
-if test -f /etc/snapper/configs/root
-    rm -f /etc/snapper/configs/root
-end
-
-# Create snapper config over the mounted Btrfs subvolume
-snapper -c root create-config --fstype=btrfs /
 
 # 9. Set Arch Config Files & Permissions
 echo 'SNAPPER_CONFIGS="root"' > /etc/conf.d/snapper
