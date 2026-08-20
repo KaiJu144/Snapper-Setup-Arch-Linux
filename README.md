@@ -531,7 +531,8 @@ sudo systemctl restart grub-btrfsd
 ```
 ### 5.5 Ensure Persistent Mounts (`/etc/fstab`)
 
-> [!NOTE] To prevent snapshots from disappearing after a system **reboot**, ensure your `/@snapshots` subvolume is registered in `/etc/fstab`.
+> [!NOTE]
+> To prevent snapshots from disappearing after a system **reboot**, ensure your `/@snapshots` subvolume is registered in `/etc/fstab`.
 
 1. Open the `/etc/fstab` file.
 
@@ -547,7 +548,8 @@ sudo nano /etc/fstab
 
 2. Add this line to the bottom of the file.
 
-> [!NOTE] If you find multiple duplicate `/.snapshots` lines, delete them all so that only one remains, in this correct format.
+> [!NOTE]
+> If you find multiple duplicate `/.snapshots` lines, delete them all so that only one remains, in this correct format.
 
 ![preview](assets/UUID-preview-1.png "PREVIEW")
 
@@ -555,9 +557,11 @@ sudo nano /etc/fstab
 UUID=YOUR_ROOT_UUID  /.snapshots  btrfs  rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@snapshots  0 0
 ```
 
-> [!NOTE] (Replace `YOUR_ROOT_UUID` with the actual UUID of your primary drive.)
+> [!NOTE]
+> (Replace `YOUR_ROOT_UUID` with the actual UUID of your primary drive.)
 
-> [!TIP] (The complete `/etc/fstab` file after adding this will look like this.)
+> [!PREVIEW]
+> (The complete `/etc/fstab` file after adding this will look like this.)
 > ```sh
 > # Static information about the filesystems.
 > # See fstab(5) for details.
