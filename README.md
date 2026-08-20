@@ -223,7 +223,7 @@ UUID=<UUID-Of-Root-Partition> /.snapshots btrfs rw,relatime,ssd,discard=async,sp
 ```
 
 (The **UUID** can be found from the line of `/` in the same fstab file.)
-![ailt](assets/UUID-preview.png "PREVIEW")
+![preview](assets/UUID-preview.png "PREVIEW")
 
 **Reload systemd** to **update fstab**:
 
@@ -529,5 +529,62 @@ sudo systemctl daemon-reload
 ```sh
 sudo systemctl restart grub-btrfsd
 ```
+### 5.5 Ensure Persistent Mounts (`/etc/fstab`)
+
+> [!NOTE] To prevent snapshots from disappearing after a system **reboot**, ensure your `/@snapshots` subvolume is registered in `/etc/fstab`.
+
+1. Open the `/etc/fstab` file.
+
+```sh
+sudo nvim /etc/fstab
+```
+
+**or**
+
+```sh
+sudo nano /etc/fstab
+```
+
+2. Add this line to the bottom of the file.
+
+> [!NOTE] If you find multiple duplicate `/.snapshots` lines, delete them all so that only one remains, in this correct format.
+
+![preview](assets/UUID-preview-1.png "PREVIEW")
+
+```sh
+UUID=YOUR_ROOT_UUID  /.snapshots  btrfs  rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@snapshots  0 0
+```
+
+> [!NOTE] (Replace `YOUR_ROOT_UUID` with the actual UUID of your primary drive.)
+
+> [!TIP] (The complete `/etc/fstab` file after adding this will look like this.)
+> ```sh
+> # Static information about the filesystems.
+> # See fstab(5) for details.
+> 
+> # <file system> <dir> <type> <options> <dump> <pass>
+> # /dev/nvme0n1p2
+> UUID=235749cf-3398-4291-b33f-96ccec82bb84 / btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/ 0 0
+> 
+> # /dev/nvme0n1p1
+> UUID=533C-B30F /boot vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro 0 2
+>
+> # /dev/nvme0n1p2 - /.snapshots
+> UUID=235749cf-3398-4291-b33f-96ccec82bb84 /.snapshots btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@snapshots 0 0
+> ```
+
+3. Perform a **mount** test and **reload** Systemd.
+
+- Run this command in the **Terminal** to **mount the system** immediately without **restarting**
+
+```sh
+sudo systemctl daemon-reload
+```
+
+```sh
+sudo mount -a
+```
+
+#### All your snapshots will reappear immediately, and this time, they won't disappear even after multiple restarts.
 
 ---
