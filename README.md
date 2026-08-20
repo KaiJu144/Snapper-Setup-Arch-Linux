@@ -560,7 +560,7 @@ UUID=YOUR_ROOT_UUID  /.snapshots  btrfs  rw,relatime,ssd,discard=async,space_cac
 > [!NOTE]
 > (Replace `YOUR_ROOT_UUID` with the actual UUID of your primary drive.)
 
-> [!PREVIEW]
+> [!TIP]
 > (The complete `/etc/fstab` file after adding this will look like this.)
 > ```sh
 > # Static information about the filesystems.
