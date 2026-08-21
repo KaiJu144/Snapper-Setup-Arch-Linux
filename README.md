@@ -435,7 +435,44 @@ This script sets up automatic snapshot retention to prevent the disk from fillin
   - Daily: **Collect 10 characters**.
   - Weekly / Monthly / Yearly: **0** (`turn it off to save space`)
 
-### 5. Why does Snapper not reuse the old snapshot number after I delete it? (In-depth explanation)
+### 5. Troubleshooting steps to fully enable Overlayfs.
+
+1. Add a hook to `mkinitcpio.conf`
+
+- Open the `mkinitcpio.conf` file:
+
+```sh
+sudo nvim /etc/mkinitcpio.conf
+```
+
+> [!NOTE]
+> Look for the line `HOOKS=(...)` and add `grub-btrfs-overlayfs` before `filesystems`
+>
+> ![preview](assets/HOOKS-preview.png 'PREVIEW')
+> 
+> ```
+> HOOKS=(base udev autodetect microcode modprobed-db kms keyboard keymap consolefont block grub-btrfs-overlayfs filesystems fsck)
+> ```
+
+2. Create **initramfs** and update the **GRUB menu**.
+
+- Run these two commands to customize the Kernel Boot Image and create a new Boot menu:
+
+```sh
+sudo mkinitcpio -P
+```
+
+```sh
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+---
+
+## OPTIONAL
+
+<details><summary>How to clean and reset Snapper to #1</summary>
+
+### Why does Snapper not reuse the old snapshot number after I delete it? (In-depth explanation)
 
 - There are three main factors that prevent Snapper from resetting to `#1` after we delete files:
 1. `info.xml` within **Subvolume** (`/.snapshots/<number>/info.xml`):
@@ -590,5 +627,7 @@ sudo mount -a
 ```
 
 #### All your snapshots will reappear immediately, and this time, they won't disappear even after multiple restarts.
+
+</details>
 
 ---
