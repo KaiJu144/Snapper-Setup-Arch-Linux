@@ -18,7 +18,7 @@ This system allows you to:
 ---
 
 > [!WARNING]
-> ## Important Precautions & Warnings (Save User)
+> ## Important Notes & Warnings
 > 
 > <details><summary>Warning</summary>
 > 
@@ -445,18 +445,39 @@ This script sets up automatic snapshot retention to prevent the disk from fillin
 sudo nvim /etc/mkinitcpio.conf
 ```
 
+```
+HOOKS=(base udev autodetect microcode modprobed-db kms keyboard keymap consolefont block filesystems fsck grub-btrfs-overlayfs)
+```
+
 > [!NOTE]
-> Look for the line `HOOKS=(...)` and add `grub-btrfs-overlayfs` before `filesystems`
+> Look for the line `HOOKS=(...)` and add `grub-btrfs-overlayfs` at the end, after `fsck`
 >
 > ![preview](assets/HOOKS-preview.png 'PREVIEW')
 > 
 > ```
-> HOOKS=(base udev autodetect microcode modprobed-db kms keyboard keymap consolefont block grub-btrfs-overlayfs filesystems fsck)
+> HOOKS=(base udev autodetect microcode modprobed-db kms keyboard keymap consolefont block filesystems fsck grub-btrfs-overlayfs)
 > ```
 
-2. Create **initramfs** and update the **GRUB menu**.
+2. Configure GRUB-Btrfs snapshot kernel parameters.
 
-- Run these two commands to customize the Kernel Boot Image and create a new Boot menu:
+Open `/etc/default/grub`:
+
+```sh
+sudo nvim /etc/default/grub
+```
+
+Set:
+
+```ini
+GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS="rd.live.overlay.overlayfs=1 snapper_snapshot_boot=1"
+```
+
+> [!IMPORTANT]
+> The `snapper_snapshot_boot=1` parameter is used by the `systemd-remount-fs.service` fix below to identify snapshot boots. Keep it together with `rd.live.overlay.overlayfs=1`.
+
+3. Create **initramfs** and update the **GRUB menu**.
+
+- Run these commands to customize the Kernel Boot Image and create a new Boot menu:
 
 ```sh
 sudo mkinitcpio -P
@@ -467,6 +488,200 @@ sudo grub-mkconfig -o /boot/grub/grub.cfg
 ```
 
 ---
+
+
+### 6. Fix `systemd-remount-fs.service` FAILED when booting a GRUB-Btrfs snapshot
+
+> [!IMPORTANT]
+> If snapshot boot works but `systemctl --failed` shows:
+>
+> ```text
+> systemd-remount-fs.service
+> ```
+>
+> with an error similar to:
+>
+> ```text
+> mount: /: fsconfig() failed: overlay: No changes allowed in reconfigure.
+> ```
+>
+> this can happen because `grub-btrfs-overlayfs` changes `/` into an OverlayFS during snapshot boot, while `systemd-remount-fs.service` later tries to remount `/` according to the normal Btrfs `/etc/fstab` entry.
+>
+> The fix below makes `systemd-remount-fs.service` run normally on the main system, but skip itself when the kernel command line contains `snapper_snapshot_boot=1` (the flag used by the snapshot boot).
+
+#### 6.1 Add a systemd drop-in
+
+**Run this while booted into the normal/main Arch Linux system, NOT while booted into a snapshot.**
+
+Create the drop-in directory:
+
+```sh
+sudo mkdir -p /etc/systemd/system/systemd-remount-fs.service.d
+```
+
+Create the configuration. The following command works in **Fish Shell** as well:
+
+```sh
+sudo sh -c 'printf "%s\n" "[Unit]" "ConditionKernelCommandLine=!snapper_snapshot_boot=1" > /etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf'
+```
+
+Verify it:
+
+```sh
+cat /etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf
+```
+
+It must contain:
+
+```ini
+[Unit]
+ConditionKernelCommandLine=!snapper_snapshot_boot=1
+```
+
+Reload systemd:
+
+```sh
+sudo systemctl daemon-reload
+```
+
+#### 6.2 Verify the drop-in on the normal system
+
+While still booted normally:
+
+```sh
+cat /proc/cmdline
+```
+
+The normal boot should **not** contain:
+
+```text
+snapper_snapshot_boot=1
+```
+
+Then check:
+
+```sh
+systemctl status systemd-remount-fs.service --no-pager
+```
+
+The service should remain able to run normally on the Btrfs root filesystem.
+
+You can also verify that systemd sees the condition:
+
+```sh
+systemctl cat systemd-remount-fs.service
+```
+
+The output should include:
+
+```ini
+/etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf
+
+[Unit]
+ConditionKernelCommandLine=!snapper_snapshot_boot=1
+```
+
+#### 6.3 Create a NEW snapshot after applying the fix
+
+> [!WARNING]
+> Snapshots created **before** this drop-in was added do not automatically contain the new file. Create a new snapshot after applying the fix and boot that new snapshot for the test.
+
+Create a snapshot:
+
+```sh
+sudo snapper create --description "Test overlay remount fix"
+```
+
+List snapshots:
+
+```sh
+arch snapshot -l
+```
+
+Note the new snapshot ID.
+
+#### 6.4 Boot the NEW snapshot from GRUB
+
+Reboot and select:
+
+```text
+Arch Linux snapshots
+```
+
+Then select the snapshot created **after** the fix.
+
+After logging in, verify:
+
+```sh
+cat /proc/cmdline
+```
+
+It should contain:
+
+```text
+snapper_snapshot_boot=1
+```
+
+Verify that `/` is OverlayFS:
+
+```sh
+findmnt /
+```
+
+Expected type:
+
+```text
+overlay
+```
+
+Finally:
+
+```sh
+systemctl --failed
+```
+
+Expected result:
+
+```text
+0 loaded units listed.
+```
+
+`systemd-remount-fs.service` should no longer appear as FAILED.
+
+#### 6.5 Why this works
+
+Normal boot:
+
+```text
+normal boot
+    ↓
+no snapper_snapshot_boot=1
+    ↓
+ConditionKernelCommandLine=!snapper_snapshot_boot=1 → TRUE
+    ↓
+systemd-remount-fs.service runs normally
+```
+
+Snapshot boot:
+
+```text
+GRUB-Btrfs snapshot boot
+    ↓
+snapper_snapshot_boot=1
+    ↓
+grub-btrfs-overlayfs creates /
+    ↓
+ConditionKernelCommandLine=!snapper_snapshot_boot=1 → FALSE
+    ↓
+systemd-remount-fs.service is skipped
+    ↓
+no OverlayFS reconfigure/remount failure
+```
+
+This fix is specifically for the OverlayFS snapshot-boot path. It does **not** change the normal `/etc/fstab` Btrfs root configuration.
+
+> [!NOTE]
+> This procedure was tested with Arch Linux, `systemd 261`, `grub-btrfs`, `snapper`, and the `grub-btrfs-overlayfs` mkinitcpio hook. Exact behavior can differ with other bootloaders, initramfs systems, systemd versions, or customized filesystem layouts, so this should not be treated as a universal guarantee for every Arch installation.
 
 ## OPTIONAL
 
