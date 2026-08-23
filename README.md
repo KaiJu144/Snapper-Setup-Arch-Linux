@@ -388,54 +388,11 @@ source ~/.config/fish/functions/arch.fish
 
 </details>
 
-# How to use (Usage)
+## Troubleshooting steps to fully enable Overlayfs & fix systemd-remount-fs.service failed.
 
-### 1. Snapshot management command in Terminal (Fish Shell)
+<details><summary>enable Overlayfs</summary>
 
-| command | Description |
-|---|---|
-| `arch snapshot` | Instantly **create a manual Snapshot** (with time/date stamp) |
-| `arch snapshot -l` | **List all snapshots** in the system. |
-| `arch snapshot -d <ID1> <ID2>` | **Delete multiple snapshots by ID** (e.g. `arch snapshot -d 5 6 7`) |
-| `arch snapshot -d (seq <ID1> <ID15>)` | **Delete snapshots from ID** (e.g. `arch snapshot -d (seq 1 15)`) 
-| `arch snapshot -h` | Show the [**Help menu**] (`arch snapshot -help`, `arch snapshot --help` can be used as well) |
-
-### 2. Auto-Snapshot before-after system update
-
-With `snap-pac` installed, **every time** you run the command:
-
-```sh
-sudo pacman -Syu
-```
-
-The system will **automatically** take `Pre` (before installation) and `Post` (after installation) snapshots.
-
-### 3. Rollback (rewind the system when the device has a problem)
-
-1. **Reboot** the machine and select the menu **`Arch Linux snapshots`** on the GNU GRUB page.
-
-2. Select the **Snapshot** of the desired date and time.
-
-3. When logging in (The system will temporarily be in a **Read-Only** state.) **If you are sure you want to roll back** the system, **open a Terminal and run**:
-
-```sh
-sudo snapper rollback
-```
-
-4. Order to **reboot** the machine again. The system will turn back time perfectly!
-
-### 4. Customized Snapper settings (Default Retention)
-
-This script sets up automatic snapshot retention to prevent the disk from filling up:
-
-- Number Cleanup: **Keep up to 50 numbers** (10 important numbers)
-
-- **Timeline Cleanup**:
-  - Hourly: **Collect 10 characters**.
-  - Daily: **Collect 10 characters**.
-  - Weekly / Monthly / Yearly: **0** (`turn it off to save space`)
-
-### 5. Troubleshooting steps to fully enable Overlayfs.
+### Step 6: Troubleshooting steps to fully enable Overlayfs
 
 1. Add a hook to `mkinitcpio.conf`
 
@@ -489,8 +446,11 @@ sudo grub-mkconfig -o /boot/grub/grub.cfg
 
 ---
 
+</details>
 
-### 6. Fix `systemd-remount-fs.service` FAILED when booting a GRUB-Btrfs snapshot
+<details><summary>Fix `systemd-remount-fs.service` FAILED</summary>
+
+### Step 6: Fix `systemd-remount-fs.service` FAILED when booting a GRUB-Btrfs snapshot
 
 > [!IMPORTANT]
 > If snapshot boot works but `systemctl --failed` shows:
@@ -682,6 +642,59 @@ This fix is specifically for the OverlayFS snapshot-boot path. It does **not** c
 
 > [!NOTE]
 > This procedure was tested with Arch Linux, `systemd 261`, `grub-btrfs`, `snapper`, and the `grub-btrfs-overlayfs` mkinitcpio hook. Exact behavior can differ with other bootloaders, initramfs systems, systemd versions, or customized filesystem layouts, so this should not be treated as a universal guarantee for every Arch installation.
+
+---
+
+</details>
+
+# How to use (Usage)
+
+### 1. Snapshot management command in Terminal (Fish Shell)
+
+| command | Description |
+|---|---|
+| `arch snapshot` | Instantly **create a manual Snapshot** (with time/date stamp) |
+| `arch snapshot -l` | **List all snapshots** in the system. |
+| `arch snapshot -d <ID1> <ID2>` | **Delete multiple snapshots by ID** (e.g. `arch snapshot -d 5 6 7`) |
+| `arch snapshot -d (seq <ID1> <ID15>)` | **Delete snapshots from ID** (e.g. `arch snapshot -d (seq 1 15)`) 
+| `arch snapshot -h` | Show the [**Help menu**] (`arch snapshot -help`, `arch snapshot --help` can be used as well) |
+
+### 2. Auto-Snapshot before-after system update
+
+With `snap-pac` installed, **every time** you run the command:
+
+```sh
+sudo pacman -Syu
+```
+
+The system will **automatically** take `Pre` (before installation) and `Post` (after installation) snapshots.
+
+### 3. Rollback (rewind the system when the device has a problem)
+
+1. **Reboot** the machine and select the menu **`Arch Linux snapshots`** on the GNU GRUB page.
+
+2. Select the **Snapshot** of the desired date and time.
+
+3. When logging in (The system will temporarily be in a **Read-Only** state.) **If you are sure you want to roll back** the system, **open a Terminal and run**:
+
+```sh
+sudo snapper rollback
+```
+
+4. Order to **reboot** the machine again. The system will turn back time perfectly!
+
+### 4. Customized Snapper settings (Default Retention)
+
+This script sets up automatic snapshot retention to prevent the disk from filling up:
+
+- Number Cleanup: **Keep up to 50 numbers** (10 important numbers)
+
+- **Timeline Cleanup**:
+  - Hourly: **Collect 10 characters**.
+  - Daily: **Collect 10 characters**.
+  - Weekly / Monthly / Yearly: **0** (`turn it off to save space`)
+
+---
 
 ## OPTIONAL
 
