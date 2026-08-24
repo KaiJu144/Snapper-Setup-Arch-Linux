@@ -755,112 +755,249 @@ Create/test a new snapshot
 
 ## Installation Manually & (Step-by-Step)
 
-<details><summary>Step 1: Install required packages</summary>
+<details><summary>Important to know</summary>
 
-### Step 1: Install required packages
+This section describes how to install the same Snapper + GRUB-Btrfs + OverlayFS setup used by this project **without running `install.fish`**.
 
-Open Terminal and install the core tools for Snapshot and GRUB integration:
+> [!IMPORTANT]
+> This guide is for an **already-installed Arch Linux system** whose `/` is on **Btrfs** and whose bootloader is **GRUB**. It is not an Arch Linux installation/chroot guide.
 
-```sh
-sudo pacman -S snapper snap-pac grub-btrfs
-```
+> [!WARNING]
+> This procedure changes `/etc/fstab`, Snapper configuration, `mkinitcpio`, GRUB-Btrfs configuration, initramfs, and the GRUB menu. Keep an Arch ISO/USB recovery medium available and back up important data first.
+
 ---
 
 </details>
 
-<details><summary>Step 2: Prepare Btrfs Subvolume for Snapshots (@snapshots)</summary>
+<details><summary>Step 1: Verify prerequisites</summary>
 
-### Step 2: Prepare Btrfs Subvolume for Snapshots (`@snapshots`)
+### Step 1: Verify prerequisites
 
-In order for Snapper and GRUB to work together without Permission or Resource Busy issues, a separate Subvolume must be created as follows:
+Boot into the **normal installed Arch Linux system**, not a snapshot.
 
- 1. Create a Subvolume named @snapshots
+Check `/`:
+
+```sh
+findmnt -no FSTYPE /
+```
+
+Expected:
+
+```
+btrfs
+```
+
+Check the root mount:
+
+```sh
+findmnt /
+```
+
+Check GRUB:
+
+```sh
+grub-install --version
+```
+
+Check Fish:
+
+```sh
+fish --version
+```
+
+If `/` is not Btrfs or GRUB is not your bootloader, **stop here**.
+
+</details>
+
+---
+
+<details><summary>Step 2: Install required packages</summary>
+
+### Step 2: Install required packages
+
+```sh
+sudo pacman -S snapper snap-pac grub-btrfs btrfs-progs
+```
+
+If Fish is not installed:
+
+```sh
+sudo pacman -S fish
+```
+
+</details>
+
+---
+
+<details><summary>Step 3: Create a top-level @snapshots subvolume</summary>
+
+### Step 3: Create `@snapshots` in the correct Btrfs hierarchy
+
+This project expects `@snapshots` to be a **top-level Btrfs subvolume**, alongside the root subvolume.
+
+Do **not** blindly run:
 
 ```sh
 sudo btrfs subvolume create /@snapshots
 ```
 
-2. Create a folder for Mount
+when `/` itself is a subvolume such as `@`; that can create a subvolume nested inside the root.
+
+Find the device containing `/`:
+
+```sh
+findmnt -no SOURCE /
+```
+
+Example:
+
+```
+/dev/nvme0n1p2[/@]
+```
+
+The underlying device is `/dev/nvme0n1p2`.
+
+Create a temporary top-level mount:
+
+```sh
+sudo mkdir -p /mnt/btrfs-top
+```
+
+Mount Btrfs top level:
+
+```sh
+sudo mount -o subvolid=5 "$(findmnt -no SOURCE / | sed 's/\[.*\]//')" /mnt/btrfs-top
+```
+
+Inspect the layout:
+
+```sh
+sudo btrfs subvolume list /mnt/btrfs-top
+```
+
+If `@snapshots` does not already exist, create it:
+
+```sh
+sudo btrfs subvolume create /mnt/btrfs-top/@snapshots
+```
+
+If it already exists, **do not create another one**.
+
+Unmount:
+
+```sh
+sudo umount /mnt/btrfs-top
+```
+
+```sh
+sudo rmdir /mnt/btrfs-top
+```
+
+> [!IMPORTANT]
+> `@snapshots` should be a sibling of the root subvolume in the Btrfs top-level tree, not a child of the root subvolume.
+
+</details>
+
+---
+
+<details><summary>Step 4: Mount @snapshots at /.snapshots and make it persistent</summary>
+
+### Step 4: Mount `@snapshots` at `/.snapshots`
+
+Create the mount point:
 
 ```sh
 sudo mkdir -p /.snapshots
 ```
 
-3. Mount Subvolume to /.snapshots (change /dev/nvme0n1p2 to your Partition Btrfs)
+Mount it:
 
 ```sh
-sudo mount -o subvol=@snapshots /dev/nvme0n1p2 /.snapshots
+sudo mount -o subvol=/@snapshots "$(findmnt -no SOURCE / | sed 's/\[.*\]//')" /.snapshots
 ```
 
-#### Add Auto-Mount settings to `/etc/fstab`:
+Verify:
 
-Open the file `/etc/fstab` with a Text Editor:
-- (e.g. `sudo nvim /etc/fstab` or `sudo nano /etc/fstab` or `sudo vim /etc/fstab` or `visudo /etc/fstab`)
--
-  ```sh
-  sudo nvim /etc/fstab
-  ```
-  
-**or**
-
--
-  ```sh
-  sudo nano /etc/fstab
-  ```
-  
-**or**
-
--
-  ```sh
-  sudo vim /etc/fstab
-  ```
-  
-**or**
-
--
-  ```sh
-  visudo /etc/fstab
-  ```
-
-and **add the line below**:
-
-```
-UUID=<UUID-Of-Root-Partition> /.snapshots btrfs rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@snapshots 0 0
+```sh
+findmnt /.snapshots
 ```
 
-(The **UUID** can be found from the line of `/` in the same fstab file.)
-![preview](assets/UUID-preview.png "PREVIEW")
+Get the Btrfs filesystem UUID:
 
-**Reload systemd** to **update fstab**:
+```sh
+findmnt -no UUID /
+```
+
+Edit `/etc/fstab`:
+
+```sh
+sudo nano /etc/fstab
+```
+
+or:
+
+```sh
+sudo nvim /etc/fstab
+```
+
+Add **one** `/.snapshots` entry:
+
+```
+UUID=YOUR_ROOT_BTRFS_UUID  /.snapshots  btrfs  rw,relatime,ssd,discard=async,space_cache=v2,subvol=/@snapshots  0 0
+```
+
+Replace `YOUR_ROOT_BTRFS_UUID` with the UUID from `findmnt -no UUID /`.
+
+> [!IMPORTANT]
+> Do not leave duplicate `/.snapshots` entries in `/etc/fstab`.
+
+Reload and test:
 
 ```sh
 sudo systemctl daemon-reload
 ```
+
 ```sh
 sudo mount -a
 ```
----
+
+Then:
+
+```sh
+findmnt /.snapshots
+```
+
+If `mount -a` reports an error, **stop and fix `/etc/fstab` before continuing**.
+
+Set permissions:
+
+```sh
+sudo chmod 750 /.snapshots
+```
 
 </details>
 
-<details><summary>Step 3: Set up Snapper Config (root)</summary>
+---
 
-### Step 3: Set up Snapper Config (`root`)
+<details><summary>Step 5: Create the Snapper root configuration</summary>
 
-To prevent Config **stuck or errors**, create a Config file for Root (`/`) manually:
+### Step 5: Configure Snapper for `/`
 
-1. Create the file `/etc/snapper/configs/root`:
+Create the configuration directory:
+
 ```sh
 sudo mkdir -p /etc/snapper/configs
 ```
 
+Create:
+
 ```sh
-sudo nvim /etc/snapper/configs/root
+sudo nano /etc/snapper/configs/root
 ```
 
-2. Enter the **configuration** content as follows:
+Use:
 
-```
+```ini
 SUBVOLUME="/"
 FSTYPE="btrfs"
 SPACE_LIMIT="0.5"
@@ -884,50 +1021,245 @@ EMPTY_PRE_POST_CLEANUP="yes"
 EMPTY_PRE_POST_MIN_AGE="1800"
 ```
 
-3. Bind the name Config `root` to the Snapper system and set **permissions**:
+Register the configuration:
 
 ```sh
-echo "SNAPPER_CONFIGS=\"root\"" | sudo tee /etc/snapper/snapper-configs
+echo 'SNAPPER_CONFIGS="root"' | sudo tee /etc/snapper/snapper-configs
 ```
 
+Verify:
+
 ```sh
-sudo chmod 750 /.snapshots
+sudo snapper -c root list
 ```
----
+
+An empty list is acceptable if no snapshots exist yet; configuration/mount errors are not.
 
 </details>
 
-<details><summary>Step 4: Enable GRUB Snapshot Service</summary>
+---
 
-### Step 4: Enable GRUB Snapshot Service.
+<details><summary>Step 6: Enable Snapper timers and Snap-Pac</summary>
 
-Enable the `grub-btrfs` service to automatically find new snapshots and add them to the Boot menu:
+### Step 6: Enable automatic snapshot services
+
+```sh
+sudo systemctl enable --now snapper-timeline.timer
+```
+
+```sh
+sudo systemctl enable --now snapper-cleanup.timer
+```
+
+Check:
+
+```sh
+systemctl status snapper-timeline.timer --no-pager
+```
+
+```sh
+systemctl status snapper-cleanup.timer --no-pager
+```
+
+`snap-pac` integrates with Pacman so package transactions can create pre/post snapshots.
+
+</details>
+
+---
+
+<details><summary>Step 7: Enable GRUB-Btrfs</summary>
+
+### Step 7: Enable `grub-btrfsd`
 
 ```sh
 sudo systemctl enable --now grub-btrfsd
 ```
----
+
+Verify:
+
+```sh
+systemctl is-active grub-btrfsd
+```
+
+Expected:
+
+```
+active
+```
 
 </details>
 
-<details><summary>Step 5: Create a Custom Function arch snapshot in Fish Shell</summary>
+---
 
-### Step 5: Create a Custom Function `arch snapshot` in Fish Shell.
+<details><summary>Step 8: Add the GRUB-Btrfs OverlayFS initramfs hook</summary>
 
-Created functionality to facilitate snapshot management via Terminal:
+### Step 8: Configure `grub-btrfs-overlayfs`
 
-1. Create a function file:
+Edit:
+
+```sh
+sudo nano /etc/mkinitcpio.conf
+```
+
+Find the active `HOOKS=(...)` line and add `grub-btrfs-overlayfs` at the **end**.
+
+Example:
+
+```ini
+HOOKS=(base udev autodetect microcode modprobed-db kms keyboard keymap consolefont block filesystems fsck grub-btrfs-overlayfs)
+```
+
+> [!IMPORTANT]
+> Modify the existing active `HOOKS=` assignment. Do not create a second `HOOKS=` line.
+
+Verify:
+
+```sh
+grep '^HOOKS=' /etc/mkinitcpio.conf
+```
+
+It must contain:
+
+```
+grub-btrfs-overlayfs
+```
+
+Rebuild:
+
+```sh
+sudo mkinitcpio -P
+```
+
+If there is an actual `ERROR:`, stop and fix it before continuing.
+
+</details>
+
+---
+
+<details><summary>Step 9: Configure GRUB-Btrfs snapshot kernel parameters</summary>
+
+### Step 9: Configure snapshot boot parameters
+
+Edit:
+
+```sh
+sudo nano /etc/default/grub-btrfs/config
+```
+
+Set:
+
+```ini
+GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS="rd.live.overlay.overlayfs=1 snapper_snapshot_boot=1"
+```
+
+Verify:
+
+```sh
+grep '^GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS=' /etc/default/grub-btrfs/config
+```
+
+Expected to contain:
+
+```
+rd.live.overlay.overlayfs=1 snapper_snapshot_boot=1
+```
+
+> [!IMPORTANT]
+> Keep `snapper_snapshot_boot=1`. The systemd fix in the next step uses it to distinguish snapshot boots from normal boots.
+
+</details>
+
+---
+
+<details><summary>Step 10: fix systemd-remount-fs.service for snapshot OverlayFS boots</summary>
+
+### Step 10: Add the OverlayFS remount condition
+
+This is an important part of this project's setup. During a snapshot boot, `/` becomes OverlayFS. Without the condition below, `systemd-remount-fs.service` can try to remount `/` using the normal Btrfs root entry and fail with an error similar to:
+
+```
+mount: /: fsconfig() failed: overlay: No changes allowed in reconfigure.
+```
+
+> [!IMPORTANT]
+> Perform this while booted into the **normal/main Arch Linux system**, not a snapshot.
+
+Create the drop-in directory:
+
+```sh
+sudo mkdir -p /etc/systemd/system/systemd-remount-fs.service.d
+```
+
+Create the drop-in:
+
+```sh
+sudo sh -c 'printf "%s\n" "[Unit]" "ConditionKernelCommandLine=!snapper_snapshot_boot=1" > /etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf'
+```
+
+Verify:
+
+```sh
+cat /etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf
+```
+
+It must contain exactly:
+
+```ini
+[Unit]
+ConditionKernelCommandLine=!snapper_snapshot_boot=1
+```
+
+Reload:
+
+```sh
+sudo systemctl daemon-reload
+```
+
+On a normal boot, `snapper_snapshot_boot=1` is absent, so the service remains able to run normally.
+
+</details>
+
+---
+
+<details><summary>Step 11: Rebuild initramfs and GRUB</summary>
+
+### Step 11: Generate the boot configuration
+
+```sh
+sudo mkinitcpio -P
+```
+
+Then:
+
+```sh
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+If snapshots already exist, GRUB-Btrfs should detect them during generation.
+
+</details>
+
+---
+
+<details><summary>Step 12: Install the Fish arch snapshot helper</summary>
+
+### Step 12: Create `arch snapshot`
+
+Create the Fish function directory:
+
 ```sh
 mkdir -p ~/.config/fish/functions
 ```
 
+Create:
+
 ```sh
-nvim ~/.config/fish/functions/arch.fish
+nano ~/.config/fish/functions/arch.fish
 ```
 
-2. Enter the Fish Script code below:
+Add:
 
-```sh
+```fish
 function arch --description "Arch Linux Snapshot Utility"
     set -l sub_command $argv[1]
 
@@ -951,11 +1283,17 @@ function arch --description "Arch Linux Snapshot Utility"
                     echo " Deleting snapshot ID(s): $args..."
                     for id in $args
                         echo "   - Deleting ID: $id"
-                        sudo snapper -c root delete $id
+                        if not sudo snapper -c root delete $id
+                            echo " Error: Failed to delete snapshot ID: $id"
+                            return 1
+                        end
                     end
 
                     echo " Updating GRUB menu..."
-                    sudo grub-mkconfig -o /boot/grub/grub.cfg
+                    if not sudo grub-mkconfig -o /boot/grub/grub.cfg
+                        echo " Error: GRUB update failed."
+                        return 1
+                    end
 
                 case -h --help -help
                     echo " Arch Snapshot Utility"
@@ -970,212 +1308,184 @@ function arch --description "Arch Linux Snapshot Utility"
                 case ""
                     set -l desc "Manual snapshot taken on "(date "+%Y-%m-%d %H:%M:%S")
                     echo " Creating manual snapshot..."
-                    sudo snapper -c root create --description "$desc"
-                    echo " Snapshot created successfully!"
+                    if sudo snapper -c root create --description "$desc"
+                        echo " Snapshot created successfully!"
+                    else
+                        echo " Error: Snapshot creation failed."
+                        return 1
+                    end
 
                 case "*"
                     echo " Unknown flag: $flag"
                     echo "Use 'arch snapshot -h' for help."
+                    return 1
             end
 
         case "*"
             echo " Unknown command: $sub_command"
             echo "Use 'arch snapshot -h' for help."
+            return 1
     end
 end
 ```
 
-3. Load functions to use:
+Load it:
 
 ```sh
 source ~/.config/fish/functions/arch.fish
 ```
 
----
-
-</details>
-
-<details><summary>Step 6: enable Overlayfs</summary>
-
-### Step 6: Troubleshooting steps to fully enable Overlayfs
-
-1. Add a hook to `mkinitcpio.conf`
-
-- Open the `mkinitcpio.conf` file:
+Test:
 
 ```sh
-sudo nvim /etc/mkinitcpio.conf
+arch snapshot -h
 ```
 
-```
-HOOKS=(base udev autodetect microcode modprobed-db kms keyboard keymap consolefont block filesystems fsck grub-btrfs-overlayfs)
-```
-
-> [!NOTE]
-> Look for the line `HOOKS=(...)` and add `grub-btrfs-overlayfs` at the end, after `fsck`
->
-> ![preview](assets/HOOKS-preview.png 'PREVIEW')
-> 
-> ```
-> HOOKS=(base udev autodetect microcode modprobed-db kms keyboard keymap consolefont block filesystems fsck grub-btrfs-overlayfs)
-> ```
-
-2. Configure GRUB-Btrfs snapshot kernel parameters.
-
-Open `/etc/default/grub`:
-
-```sh
-sudo nvim /etc/default/grub
-```
-
-Set:
-
-```ini
-GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS="rd.live.overlay.overlayfs=1 snapper_snapshot_boot=1"
-```
-
-> [!IMPORTANT]
-> The `snapper_snapshot_boot=1` parameter is used by the `systemd-remount-fs.service` fix below to identify snapshot boots. Keep it together with `rd.live.overlay.overlayfs=1`.
-
-3. Create **initramfs** and update the **GRUB menu**.
-
-- Run these commands to customize the Kernel Boot Image and create a new Boot menu:
-
-```sh
-sudo mkinitcpio -P
-```
-
-```sh
-sudo grub-mkconfig -o /boot/grub/grub.cfg
-```
-
----
-
-</details>
-
-<details><summary>Step 7: fix systemd-remount-fs.service [FAILED]</summary>
-
-### Step 7: Fix `systemd-remount-fs.service` FAILED when booting a GRUB-Btrfs snapshot
-
-> [!IMPORTANT]
-> If snapshot boot works but `systemctl --failed` shows:
->
-> ```
-> systemd-remount-fs.service
-> ```
->
-> with an error similar to:
->
-> ```
-> mount: /: fsconfig() failed: overlay: No changes allowed in reconfigure.
-> ```
->
-> this can happen because `grub-btrfs-overlayfs` changes `/` into an OverlayFS during snapshot boot, while `systemd-remount-fs.service` later tries to remount `/` according to the normal Btrfs `/etc/fstab` entry.
->
-> The fix below makes `systemd-remount-fs.service` run normally on the main system, but skip itself when the kernel command line contains `snapper_snapshot_boot=1` (the flag used by the snapshot boot).
-
-#### 6.1 Add a systemd drop-in
-
-**Run this while booted into the normal/main Arch Linux system, NOT while booted into a snapshot.**
-
-Create the drop-in directory:
-
-```sh
-sudo mkdir -p /etc/systemd/system/systemd-remount-fs.service.d
-```
-
-Create the configuration. The following command works in **Fish Shell** as well:
-
-```sh
-sudo sh -c 'printf "%s\n" "[Unit]" "ConditionKernelCommandLine=!snapper_snapshot_boot=1" > /etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf'
-```
-
-Verify it:
-
-```sh
-cat /etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf
-```
-
-It must contain:
-
-```ini
-[Unit]
-ConditionKernelCommandLine=!snapper_snapshot_boot=1
-```
-
-Reload systemd:
-
-```sh
-sudo systemctl daemon-reload
-```
-
-#### 6.2 Verify the drop-in on the normal system
-
-While still booted normally:
-
-```sh
-cat /proc/cmdline
-```
-
-The normal boot should **not** contain:
-
-```
-snapper_snapshot_boot=1
-```
-
-Then check:
-
-```sh
-systemctl status systemd-remount-fs.service --no-pager
-```
-
-The service should remain able to run normally on the Btrfs root filesystem.
-
-You can also verify that systemd sees the condition:
-
-```sh
-systemctl cat systemd-remount-fs.service
-```
-
-The output should include:
-
-```ini
-/etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf
-
-[Unit]
-ConditionKernelCommandLine=!snapper_snapshot_boot=1
-```
-
-#### 6.3 Create a NEW snapshot after applying the fix
-
-> [!WARNING]
-> Snapshots created **before** this drop-in was added do not automatically contain the new file. Create a new snapshot after applying the fix and boot that new snapshot for the test.
-
-Create a snapshot:
-
-```sh
-sudo snapper create --description "Test overlay remount fix"
-```
-
-List snapshots:
+Then:
 
 ```sh
 arch snapshot -l
 ```
 
-Note the new snapshot ID.
+</details>
 
-#### 6.4 Boot the NEW snapshot from GRUB
+---
 
-Reboot and select:
+<details><summary>Step 13: Create a NEW test snapshot</summary>
+
+### Step 13: Create a snapshot after all fixes
+
+Create a new snapshot **after** the systemd drop-in was installed:
+
+```sh
+sudo snapper -c root create --description "Manual installation test"
+```
+
+List it:
+
+```sh
+sudo snapper -c root list
+```
+
+> [!WARNING]
+> Snapshots created before the `systemd-remount-fs` drop-in was added do not contain the new file. Use a snapshot created **after** the fix for the first boot test.
+
+Regenerate GRUB:
+
+```sh
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+</details>
+
+---
+
+<details><summary>Step 14: Verify the normal boot before rebooting</summary>
+
+### Step 14: Normal-system verification
+
+Check:
+
+```sh
+findmnt /
+```
+
+The normal root should be Btrfs, not OverlayFS.
+
+```sh
+findmnt /.snapshots
+```
+
+```sh
+sudo snapper -c root list
+```
+
+```sh
+systemctl is-active grub-btrfsd
+```
+
+Expected:
+
+```
+active
+```
+
+```sh
+systemctl --failed
+```
+
+Expected:
+
+```
+0 loaded units listed.
+```
+
+Check the hook:
+
+```sh
+grep '^HOOKS=' /etc/mkinitcpio.conf
+```
+
+It must contain `grub-btrfs-overlayfs`.
+
+Check the GRUB-Btrfs parameter:
+
+```sh
+grep '^GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS=' /etc/default/grub-btrfs/config
+```
+
+It must contain:
+
+```
+rd.live.overlay.overlayfs=1 snapper_snapshot_boot=1
+```
+
+Check the systemd drop-in:
+
+```sh
+cat /etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf
+```
+
+Expected:
+
+```ini
+[Unit]
+ConditionKernelCommandLine=!snapper_snapshot_boot=1
+```
+
+Check:
+
+```sh
+cat /proc/cmdline
+```
+
+A normal boot should **not** contain:
+
+```
+snapper_snapshot_boot=1
+```
+
+</details>
+
+---
+
+<details><summary>Test booting a snapshot</summary>
+
+### Reboot and test a snapshot
+
+```sh
+sudo reboot
+```
+
+At GRUB, select:
 
 ```
 Arch Linux snapshots
 ```
 
-Then select the snapshot created **after** the fix.
+Select the **new snapshot created after the fix**.
 
-After logging in, verify:
+After logging in:
 
 ```sh
 cat /proc/cmdline
@@ -1184,20 +1494,17 @@ cat /proc/cmdline
 It should contain:
 
 ```
+rd.live.overlay.overlayfs=1
 snapper_snapshot_boot=1
 ```
 
-Verify that `/` is OverlayFS:
+Check:
 
 ```sh
 findmnt /
 ```
 
-Expected type:
-
-```
-overlay
-```
+An `overlay` root is expected during a snapshot boot.
 
 Finally:
 
@@ -1205,48 +1512,230 @@ Finally:
 systemctl --failed
 ```
 
-Expected result:
+Expected:
 
 ```
 0 loaded units listed.
 ```
 
-`systemd-remount-fs.service` should no longer appear as FAILED.
+`systemd-remount-fs.service` should not be listed as failed.
 
-#### 6.5 Why this works
+</details>
 
-Normal boot:
+---
 
-```text
-normal boot
-    ↓
-no snapper_snapshot_boot=1
-    ↓
-ConditionKernelCommandLine=!snapper_snapshot_boot=1 → TRUE
-    ↓
-systemd-remount-fs.service runs normally
+<details><summary>Return to the normal system</summary>
+
+### Step 16: Return to normal Arch Linux
+
+Reboot:
+
+```sh
+sudo reboot
 ```
 
-Snapshot boot:
+Select the normal:
 
-```text
-GRUB-Btrfs snapshot boot
-    ↓
+```
+Arch Linux
+```
+
+entry, not the snapshot.
+
+Verify:
+
+```sh
+findmnt /
+```
+
+The normal root should be Btrfs.
+
+Then:
+
+```sh
+systemctl --failed
+```
+
+It should remain clean.
+
+And:
+
+```sh
+cat /proc/cmdline
+```
+
+should not contain:
+
+```
 snapper_snapshot_boot=1
-    ↓
-grub-btrfs-overlayfs creates /
-    ↓
-ConditionKernelCommandLine=!snapper_snapshot_boot=1 → FALSE
-    ↓
-systemd-remount-fs.service is skipped
-    ↓
-no OverlayFS reconfigure/remount failure
 ```
 
-This fix is specifically for the OverlayFS snapshot-boot path. It does **not** change the normal `/etc/fstab` Btrfs root configuration.
+---
 
-> [!NOTE]
-> This procedure was tested with Arch Linux, `systemd 261`, `grub-btrfs`, `snapper`, and the `grub-btrfs-overlayfs` mkinitcpio hook. Exact behavior can differ with other bootloaders, initramfs systems, systemd versions, or customized filesystem layouts, so this should not be treated as a universal guarantee for every Arch installation.
+</details>
+
+<details><summary>Final verification checklist</summary>
+
+### Final verification checklist
+
+Run:
+
+```sh
+findmnt -no FSTYPE /
+```
+
+→ `btrfs`
+
+```sh
+findmnt /.snapshots
+```
+
+→ `/.snapshots` is mounted from `@snapshots`
+
+```sh
+sudo snapper -c root list
+```
+
+→ Snapper lists snapshots without configuration errors
+
+```sh
+systemctl is-active grub-btrfsd
+```
+
+→ `active`
+
+```sh
+systemctl --failed
+```
+
+→ `0 loaded units listed.`
+
+```sh
+grep '^HOOKS=' /etc/mkinitcpio.conf
+```
+
+→ contains `grub-btrfs-overlayfs`
+
+```sh
+grep '^GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS=' /etc/default/grub-btrfs/config
+```
+
+→ contains `rd.live.overlay.overlayfs=1 snapper_snapshot_boot=1`
+
+```sh
+cat /etc/systemd/system/systemd-remount-fs.service.d/snapshot-overlay.conf
+```
+
+→ contains:
+
+```ini
+[Unit]
+ConditionKernelCommandLine=!snapper_snapshot_boot=1
+```
+
+A successful snapshot boot should additionally show `snapper_snapshot_boot=1`, an `overlay` root, and no failed `systemd-remount-fs.service`.
+
+---
+
+</details>
+
+<details><summary>Important safety notes</summary>
+
+### Important safety notes
+
+#### Do not use `snapper rollback` blindly from the normal base system
+
+For this project's Btrfs layout, do not blindly run:
+
+```sh
+sudo snapper rollback
+```
+
+while booted into the normal base system.
+
+If you intend to roll back, first boot the desired snapshot through the GRUB-Btrfs snapshot menu and then follow the project's rollback procedure.
+
+### Do not manually delete Btrfs subvolumes to lower snapshot numbers
+
+Do not use:
+
+```sh
+rm -rf /.snapshots/*
+```
+
+or arbitrary:
+
+```sh
+sudo btrfs subvolume delete ...
+```
+
+to force Snapper numbering back to `#1`.
+
+A high snapshot number is not a failure. If you intentionally want to reset the history, use the project's **automated installer Option 2** rather than manually deleting snapshot storage.
+
+#### Do not delete `/.snapshots` blindly
+
+`/.snapshots` is a mount point and is not necessarily the actual Btrfs snapshot-storage subvolume.
+
+Inspect first:
+
+```sh
+findmnt /.snapshots
+```
+
+```sh
+sudo btrfs subvolume list /
+```
+
+#### Keep a recovery medium
+
+Because this setup changes initramfs and GRUB, keep an Arch ISO/USB available.
+
+---
+
+</details>
+
+<details><summary>Recommended workflow</summary>
+
+### Recommended workflow
+
+```
+Verify Btrfs + GRUB
+        ↓
+Install packages
+        ↓
+Create top-level @snapshots
+        ↓
+Mount @snapshots at /.snapshots
+        ↓
+Add /etc/fstab entry
+        ↓
+Configure Snapper root
+        ↓
+Enable Snapper timers + grub-btrfsd
+        ↓
+Add grub-btrfs-overlayfs
+        ↓
+Configure snapshot kernel parameters
+        ↓
+Add systemd-remount-fs condition
+        ↓
+Rebuild initramfs
+        ↓
+Regenerate GRUB
+        ↓
+Create a NEW test snapshot
+        ↓
+Verify normal boot
+        ↓
+Boot the NEW snapshot
+        ↓
+Check OverlayFS + systemctl --failed
+        ↓
+Return to normal Arch Linux
+```
+
+> **Recommendation:** If you do not specifically need a manual installation, use the project's `install.fish`. The automated installer performs the same configuration while adding validation, backups, and the two snapshot-history modes.
 
 ---
 
@@ -1298,39 +1787,6 @@ This script sets up automatic snapshot retention to prevent the disk from fillin
   - Hourly: **Collect 10 characters**.
   - Daily: **Collect 10 characters**.
   - Weekly / Monthly / Yearly: **0** (`turn it off to save space`)
-
-### 5. Troubleshooting steps to fully enable Overlayfs.
-
-1. Add a hook to `mkinitcpio.conf`
-
-- Open the `mkinitcpio.conf` file:
-
-```sh
-sudo nvim /etc/mkinitcpio.conf
-```
-
-> [!NOTE]
-> Look for the line `HOOKS=(...)` and add `grub-btrfs-overlayfs` before `filesystems`
->
-> ![preview](assets/HOOKS-preview.png 'PREVIEW')
-> 
-> ```
-> HOOKS=(base udev autodetect microcode modprobed-db kms keyboard keymap consolefont block grub-btrfs-overlayfs filesystems fsck)
-> ```
-
-2. Create **initramfs** and update the **GRUB menu**.
-
-- Run these two commands to customize the Kernel Boot Image and create a new Boot menu:
-
-```sh
-sudo mkinitcpio -P
-```
-
-```sh
-sudo grub-mkconfig -o /boot/grub/grub.cfg
-```
-
----
 
 ## OPTIONAL
 
