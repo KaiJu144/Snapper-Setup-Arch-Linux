@@ -807,9 +807,9 @@ fish --version
 
 If `/` is not Btrfs or GRUB is not your bootloader, **stop here**.
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 2: Install required packages</summary>
 
@@ -825,9 +825,9 @@ If Fish is not installed:
 sudo pacman -S fish
 ```
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 3: Create a top-level @snapshots subvolume</summary>
 
@@ -896,9 +896,9 @@ sudo rmdir /mnt/btrfs-top
 > [!IMPORTANT]
 > `@snapshots` should be a sibling of the root subvolume in the Btrfs top-level tree, not a child of the root subvolume.
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 4: Mount @snapshots at /.snapshots and make it persistent</summary>
 
@@ -975,9 +975,9 @@ Set permissions:
 sudo chmod 750 /.snapshots
 ```
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 5: Create the Snapper root configuration</summary>
 
@@ -1035,9 +1035,9 @@ sudo snapper -c root list
 
 An empty list is acceptable if no snapshots exist yet; configuration/mount errors are not.
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 6: Enable Snapper timers and Snap-Pac</summary>
 
@@ -1063,9 +1063,9 @@ systemctl status snapper-cleanup.timer --no-pager
 
 `snap-pac` integrates with Pacman so package transactions can create pre/post snapshots.
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 7: Enable GRUB-Btrfs</summary>
 
@@ -1087,9 +1087,9 @@ Expected:
 active
 ```
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 8: Add the GRUB-Btrfs OverlayFS initramfs hook</summary>
 
@@ -1132,9 +1132,9 @@ sudo mkinitcpio -P
 
 If there is an actual `ERROR:`, stop and fix it before continuing.
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 9: Configure GRUB-Btrfs snapshot kernel parameters</summary>
 
@@ -1167,9 +1167,9 @@ rd.live.overlay.overlayfs=1 snapper_snapshot_boot=1
 > [!IMPORTANT]
 > Keep `snapper_snapshot_boot=1`. The systemd fix in the next step uses it to distinguish snapshot boots from normal boots.
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 10: fix systemd-remount-fs.service for snapshot OverlayFS boots</summary>
 
@@ -1217,9 +1217,9 @@ sudo systemctl daemon-reload
 
 On a normal boot, `snapper_snapshot_boot=1` is absent, so the service remains able to run normally.
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 11: Rebuild initramfs and GRUB</summary>
 
@@ -1237,9 +1237,9 @@ sudo grub-mkconfig -o /boot/grub/grub.cfg
 
 If snapshots already exist, GRUB-Btrfs should detect them during generation.
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 12: Install the Fish arch snapshot helper</summary>
 
@@ -1347,9 +1347,9 @@ Then:
 arch snapshot -l
 ```
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 13: Create a NEW test snapshot</summary>
 
@@ -1376,9 +1376,9 @@ Regenerate GRUB:
 sudo grub-mkconfig -o /boot/grub/grub.cfg
 ```
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Step 14: Verify the normal boot before rebooting</summary>
 
@@ -1465,9 +1465,9 @@ A normal boot should **not** contain:
 snapper_snapshot_boot=1
 ```
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Test booting a snapshot</summary>
 
@@ -1520,9 +1520,9 @@ Expected:
 
 `systemd-remount-fs.service` should not be listed as failed.
 
-</details>
-
 ---
+
+</details>
 
 <details><summary>Return to the normal system</summary>
 
